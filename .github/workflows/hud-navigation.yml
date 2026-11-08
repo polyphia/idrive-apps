@@ -1,0 +1,26 @@
+name: HUD navigation
+on:
+  pull_request:
+    paths:
+      - 'native/mindflow-hud/**'
+      - 'apps/robertn_hud_map/**'
+      - '.github/workflows/hud-navigation.yml'
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  navigation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node native/mindflow-hud/test/navigation_display_test.js
+      - run: node native/mindflow-hud/test/navigation_state_test.js
+      - run: node native/mindflow-hud/test/navigation_progress_test.js
+      - run: node native/mindflow-hud/test/destination_capture_test.js
+      - run: node native/mindflow-hud/test/route_response_test.js
+      - run: node native/mindflow-hud/test/uplink_dns_test.js
+      - run: node native/mindflow-hud/test/postal_geocode_test.js

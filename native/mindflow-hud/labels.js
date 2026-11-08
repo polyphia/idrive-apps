@@ -33,7 +33,7 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
  // by this layer because the HUD slot shows either BMW's guidance or this scene.
  function guidancePanel(m){
   const cx=95,cy=74,white=[1,1,1,1],dim=[.62,.8,.9,1];
-  border(20,20,150,138,16,1.5,[.46,.9,1,1]);box(21.5,21.5,147,135,14.5,[.02,.12,.17,.82]);
+  // no background: only the arrow, distance and road over the map
   const pt=(x,y)=>[cx+x,cy+y];
   function seg(a,b,w,color){const dx=b[0]-a[0],dy=b[1]-a[1],n=Math.hypot(dx,dy)||1,ux=dx/n,uy=dy/n,px=-uy*w/2,py=ux*w/2,a2=[a[0]-ux*w/2,a[1]-uy*w/2],b2=[b[0]+ux*w/2,b[1]+uy*w/2];
    triangle([a2[0]+px,a2[1]+py],[b2[0]+px,b2[1]+py],[b2[0]-px,b2[1]-py],color);triangle([a2[0]+px,a2[1]+py],[b2[0]-px,b2[1]-py],[a2[0]-px,a2[1]-py],color);}
@@ -60,11 +60,18 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
   const U={METER:'m',KM:'km',MILE_UK:'mi',MILE_US:'mi',YARD:'yd',FEET:'ft'};
   const d=m.distance!==''&&m.distance!==undefined&&m.distance!==null?String(m.distance)+(U[m.unit]?' '+U[m.unit]:''):'';
   if(d)text(d,cx-measure(d,26)/2,120,26,white);
-  if(m.text){const t=shorten(m.text,15,420);box(20,164,measure(t,15)+20,26,10,[.02,.12,.17,.82]);text(t,30,166,15,dim);}
+  if(m.text){const t=shorten(m.text,15,300),w=measure(t,15)+20;text(t,180-w,166,15,dim);}
  }
- if(guidance)guidancePanel(guidance);
+ if(guidance){
+  const start=g.positions.length;guidancePanel(guidance);
+  const sc=(cfg.turnSize||100)/100,ox=800-24-150*sc+(cfg.turnX||0),oy=480-24-170*sc+(cfg.turnY||0);
+  const v=Settings.view(cfg),k=v[1]||1;
+  for(let i=start;i<g.positions.length;i+=3){
+   const sx=ox+(g.positions[i]-20)*sc,sy=oy+(g.positions[i+1]-20)*sc;
+   g.positions[i]=(sx-400-v[2])/k+400;g.positions[i+1]=(sy-240-v[3])/k+240;
+  }
+ }
  if(traffic)text(traffic,24,24,16,[1,.8,.48,1]);
- text('Google Maps | Mapbox | OpenStreetMap',12,454,11,[.65,.75,.82,1]);
  return g;
 }
 module.exports={VS,FS,build};

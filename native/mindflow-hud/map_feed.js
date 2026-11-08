@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 'use strict';
-// Map-only HUD feed. The HUD app sends the car's own GNSS fix from BMW's
-// Positioning interface ({cmd:'position', raw, current}); this answers the
-// renderer's /route, /state and /mapbox-config in-process, in the shapes the
-// Google-route feed used. There is no route: /route is a short stub ahead of the
-// car along its heading (marked mapOnly, not drawn), so the map follows the
-// car's position and heading. Turn guidance stays in Google Maps' own displays.
+// Car position and calculated route feed for the HUD renderer. Phone guidance
+// checks the full route before its cyan geometry is returned. Without a usable
+// line, the heading stub keeps the road map visible and is marked mapOnly.
 const fs = require('fs');
+const { RouteProgress } = require('./route_match');
 
 // Mapbox token: a private override (a user's own mindflow-hud-routing tool), else the
 // public token this tool ships in mapbox.json.
@@ -42,14 +40,15 @@ class MapFeed {
         const o = options || {};
         this.clock = o.clock || nowNs; this.wall = o.wall || Date.now; this.routing = o.routing || ROUTING; this.bundled = o.bundled || BUNDLED;
         this.fix = null; this.prev = null; this.heading = null; this.reason = 'waiting for car GPS';
-        this.token = null; this.count = 0; this.log = o.log || null; this.loggedAt = 0;
+        this.token = null; this.count = 0;
+        this.full = o.full || null; this.match = o.match || null;
+        this.maneuver = o.maneuver || null; this.matchedRoute = null; this.matchedFix = null; this.progress = new RouteProgress();
     }
     // {cmd:'position', raw: RawGNSSPositionData, current: CurrentLocation|null}
     position(msg) {
         const raw = msg && msg.raw, pos = raw && raw.position;
         const fixType = raw && raw.fixType, acc = FIX_OK[fixType];
         const t = this.clock();
-        if (this.log && this.wall() - this.loggedAt >= 1000) { this.loggedAt = this.wall(); this.log({ src: 'map', field: 'position', value: { raw, current: msg.current || null } }); }
         const usable = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 85 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0);
         if (!pos || pos.coordinatesValid === false || !acc || !usable(Number(pos.latitude), Number(pos.longitude))) {
             // No satellite fix (garage, tunnel): BMW navigation's own current location
@@ -111,6 +110,34 @@ class MapFeed {
         }
         if (path === '/route') {
             const h = this.heading !== null ? this.heading : 0;
+            const phone = this.maneuver ? this.maneuver() : null;
+            if (this.full && this.full.active() && (!this.maneuver || phone)) {
+                let coordinates = this.full.coordinates(f);
+                if (coordinates) this.progress.update(this.full.route, f);
+                if (coordinates && this.match) {
+                    if (this.matchedRoute !== this.full.route) {
+                        this.match.onNewRoute(); this.matchedRoute = this.full.route; this.matchedFix = null;
+                    }
+                    const moving = Number.isFinite(f.speed) && f.speed >= 1.5;
+                    if (moving) {
+                        // Repeated renderer polls of one fix are not new observations.
+                        if (this.matchedFix !== f.at) {
+                            this.match.update(Object.assign({}, f, { routeAlong: this.progress.along }), this.full.route, phone); this.matchedFix = f.at;
+                        }
+                        const requested = this.match.takeReroute();
+                        if (requested || this.match.state === 'mismatch') this.full.reroute(f, 'phone-mismatch');
+                    } else {
+                        this.match.pause(); this.matchedFix = null;
+                    }
+                    coordinates = this.match.clip(coordinates);
+                }
+                coordinates = this.progress.display(coordinates, f);
+                if (coordinates && coordinates.length >= 2) {
+                    return Promise.resolve({ route: { coordinates, traffic: { status: 'unavailable', age_s: 0, intervals: [] }, mapOnly: false }, generation: 'destination:' + this.full.destKey });
+                }
+            } else if (this.match) {
+                this.match.onNewRoute(); this.matchedRoute = null;
+            }
             return Promise.resolve({ route: { coordinates: [[f.lon, f.lat], ahead(f, h, AHEAD_M)], traffic: { age_s: 0, intervals: [] }, mapOnly: true }, generation: 'map' });
         }
         return Promise.reject(Error('unknown feed path ' + path));

@@ -1,6 +1,6 @@
 {
   "name": "mindflow-hud",
-  "version": "0.6.0",
+  "version": "0.6.13",
   "private": true,
   "description": "HUD map: a road map around the car on the BMW head-up display, drawn through cluster-render",
   "license": "GPL-3.0-or-later",

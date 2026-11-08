@@ -29,8 +29,8 @@ tried; nothing worked as well as having real geometry to draw.
 
 ## How it works
 
-Everything comes from interfaces the head unit publishes to apps over SOME/IP. Nothing patches BMW software, and
-nothing reads another process's memory.
+Position and maneuver guidance come from published SOME/IP interfaces. Destination capture additionally reads
+`aapd` through a bounded, firmware-specific native reader; see the route section below.
 
 1. **Car position.** The app subscribes to BMW navigation's `Positioning` interface: `rawPositionData` (the GNSS fix:
    position, heading, fix type, UTC time) and `currentLocation` (BMW's own map-matched, dead-reckoned position). Without
@@ -48,21 +48,24 @@ nothing reads another process's memory.
    connections through a small helper running as `hmi_5000` (uid 5000, the tool's `"uids"`), and gets the connected
    sockets back.
 
-### The route line, and why there is none yet
+### Destination capture and route geometry
 
-What is missing for a navigation map is the **route geometry**: the polyline of the route ahead. Android Auto
-projects the next maneuvers to the car (turn, distance, lanes, distance and time to the destination), but not the
-route's coordinates and not even the destination's: the projected waypoints arrive with `coordinatesValid: false`.
-The route only exists on the phone.
+Active phone guidance starts bounded destination capture. The bundled reader validates the supported `aapd`
+binary fingerprint, observes its navigation callback using hardware breakpoints, and records address text.
+This is firmware-specific process instrumentation, not a published BMW destination interface. An unsupported
+binary cannot provide automatic destination capture. Destination reading starts automatically;
+the reader returns only destination text over a bounded pipe, without recording or exporting diagnostic logs.
 
-Getting it out of Android Auto or `aapd` directly has been challenging so far. Reading it from `aapd` means
-instrumenting a closed binary at addresses that change with every firmware build; it worked in an emulator for one
-build and stops at the next. That is why this version takes the approach above: the car's own position and BMW's
-own guidance list, both through published interfaces, which survive firmware updates.
+The captured address is geocoded with Mapbox, using the first result, then Vela's Google web-route approach
+returns candidate geometry. This does not use the Google Routes API. The fastest candidate is selected initially.
+Once the vehicle moves, repeated disagreement with the phone's upcoming maneuver triggers correction. Phone
+turns remain authoritative; conflicting geometry is clipped, completed streets are removed, and local street
+prediction remains available when a complete route cannot be established. Ambiguous address text can still resolve
+to the wrong place; distance and ETA similarity alone do not prove the destination.
 
-**A companion app** on the phone could be an alternative: an Android app that knows the destination (for example by
-starting the trip or by sharing the place to it) could compute or receive the route and send its geometry to the
-head unit over Wi-Fi. This has not been worked on yet.
+The published waypoint distance/time may refer to the first stop rather than the final destination. Consumers
+must retain explicit scope rather than infer it from a field name. Synthetic regression tests cover route selection,
+correction, stale data and rendering; they do not establish live-car behavior for every firmware or route.
 
 ## Features
 
@@ -76,16 +79,10 @@ head unit over Wi-Fi. This has not been worked on yet.
   opacity, camera warnings.
 - Leaves BMW's own speed, speed limit and assist icons visible.
 
-The possibilities are wide open: the scene is our own, so anything the car or the phone can tell the head unit can
-be drawn on it. Turn indications are an example: they are already implemented (the guidance feed and the turn panel
-above) but do not show yet, see below.
-
 ## Known issues
 
-- **The route line is not drawn.** Without route geometry the service sends the renderer a placeholder, which the
-  scene leaves out. Drawing the upcoming streets of the route (for example from the maneuver points) should be an
-  easy fix.
-- **Turn indications** are implemented but not yet working on the car.
+- The current navigation/capture integration needs on-car validation; the synthetic tests do not replace it.
+- Destination capture supports only its fingerprinted firmware; the Google web response format may change.
 - **Speed camera data over Overpass**: `overpass-api.de` refuses the TLS of the unit's Node 8, so only the regional
   packs work there.
 - The map uses one public Mapbox token, shipped in `native/mindflow-hud/mapbox.json`. A private

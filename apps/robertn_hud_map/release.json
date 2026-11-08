@@ -1,1 +1,10 @@
-{ "build": "node tools/build.js", "requires": { "mindflow-hud": "0.6.0" }, "uninstallable": true, "mguHmi": ["ID7"] }
+{
+  "build": "node tools/build.js",
+  "requires": {
+    "mindflow-hud": "next"
+  },
+  "uninstallable": true,
+  "mguHmi": [
+    "ID7"
+  ]
+}

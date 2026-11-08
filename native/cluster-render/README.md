@@ -903,7 +903,9 @@ The host tests:
   at most once a second, passes following the stack with an exclusive
   layer, turns, uniform arrays, animations, and a scene published again
   rebuilding all of it; fades in and out and their timing, a parked
-  target staging nothing, and a released target's warm scene;
+  target staging nothing, and a released target's warm scene; the limits
+  (64 layers a client, 96 in all) and 96 small layers changing every tick
+  past the 5500 KB/s ceiling, written within it, each an even share;
 - `dcsm2_port_test`: the Dcsm2 request sequence, parked and promoted
   mappings, take-overs, reply matching and refusal kinds; the undecoded
   notifications' rate limit, subscription answers, the no-answer line and
@@ -1106,8 +1108,8 @@ Not verified, needs the car (iDrive 8): the CAR-ONLY list of "iDrive 8".
 
 ## Releases
 
-A version is `component.json` `version` (`x.y.z`), published once: a
-changed tool needs a higher version before it can be published again. The
+A version is `component.json` `version` (`x.y.z`), published once; the
+release sets it ([`CONTRIBUTING.md`](../../CONTRIBUTING.md)). The
 repository's release tooling (`release/`, its README) builds, checks and
 publishes cluster-render with the repository's other components, from the
 repository's root:

@@ -1,6 +1,7 @@
 'use strict';
-const defaults={enabled:false,zoom:100,size:100,x:0,y:0,horizon:20,distance:135,opacity:85,cameras:true};
-const ranges={zoom:[50,200],size:[30,100],x:[-200,200],y:[-120,120],horizon:[20,110],distance:[80,180],opacity:[30,100]};
+// turnX/turnY: the turn panel's offset from the HUD's bottom-right corner (px); turnSize: its size (%)
+const defaults={enabled:false,zoom:100,size:100,x:0,y:0,horizon:20,distance:135,opacity:85,cameras:true,turnX:0,turnY:0,turnSize:100};
+const ranges={zoom:[50,200],size:[30,100],x:[-200,200],y:[-120,120],horizon:[20,110],distance:[80,180],opacity:[30,100],turnX:[-620,20],turnY:[-300,20],turnSize:[50,200]};
 function validate(value){if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid settings');const out=Object.assign({},defaults);for(const k of Object.keys(value)){if(!Object.prototype.hasOwnProperty.call(defaults,k))throw Error('Unknown setting');const v=value[k];if(typeof defaults[k]==='boolean'){if(typeof v!=='boolean')throw Error('Invalid toggle');}else if(!Number.isInteger(v)||v<ranges[k][0]||v>ranges[k][1])throw Error('Setting outside range');out[k]=v;}return out;}
 function view(s){return [s.zoom/100,s.size/100,s.x,s.y];}
 function camera(s){return [s.horizon,s.distance,40770];}

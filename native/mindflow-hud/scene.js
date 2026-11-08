@@ -36,8 +36,18 @@ function build(roadGeo,route,origin,pose,settings){const opacity=(settings||Sett
  let run=[],runStart=0;
  const flush=()=>{if(run.length>1){kernel.ribbon(run,5.2,bed);kernel.ribbon(run,3.1,edge);kernel.ribbon(run,2.4,null,i=>bins[speeds[runStart+i]||'NORMAL']);}run=[];};
  for(let i=start;i<all.length-1;i++){
-  const a=i===start&&match&&match.distance<30?match.point:all[i],b=all[i+1];
+  let a=i===start&&match&&match.distance<30?match.point:all[i],b=all[i+1];
+  // A later loop may be ahead in route order but behind the car in the view.
+  // Keep road context there, but never draw it as an immediate cyan instruction.
+  const forward=p=>(p[0]-pose[0])*Math.sin(pose[2])+(p[1]-pose[1])*Math.cos(pose[2]);
+  const za=forward(a),zb=forward(b),rear=-3;
+  if(za<rear&&zb<rear){flush();continue;}
+  if(za<rear||zb<rear){
+   const t=(rear-za)/(zb-za),cut=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])];
+   if(za<rear){flush();a=cut;}else b=cut;
+  }
   const near=nearest(pose,[a,b]);if(near&&near.distance<1800){if(!run.length){run=[a];runStart=i;}run.push(b);}else flush();
+  if(zb<rear)flush();
  }flush();
  const groups=[[groundEdge,[.51,.62,.69,.24*opacity]],[ground,[.57,.68,.76,.9*opacity]],[bed,[.38,.52,.61,.42*opacity]],[edge,[.15,.60,.77,.9*opacity]],[bins.NORMAL,[0,.83,.98,1]],[bins.SLOW,[1,.57,.08,1]],[bins.TRAFFIC_JAM,[1,.15,.12,1]]];
  const parts=[];groups.forEach(g=>geometry(g[0]).forEach(geometry=>parts.push({geometry,color:g[1]})));

@@ -39,7 +39,7 @@ a video pipeline:
 Install the app `robertn_waze_cluster` from the catalog of
 [idrive-apps](https://github.com/robertnisipeanu/idrive-apps)
 through the [mgu Store](https://github.com/robertnisipeanu/mgu-store). The
-app requires this tool (0.9.1); this tool requires `cluster-render` 0.4.0 and
+app requires this tool (0.9.3); this tool requires `cluster-render` 0.4.0 and
 `mgu-deploy` 0.7.11, the deploy tool version that runs activate and deactivate
 hooks and puts the tool's `recmgr` and `crashNames` names, `aapd` among
 them, on the lists. Requirements resolve across catalog sources.
@@ -377,6 +377,21 @@ cluster-render's `hud` target is slot 0x323 (its README.md "The HUD").
   `{"cmd":"hud","on":"1"}`, `{"cmd":"hud","hud_width_pct":"70"}`,
   `{"cmd":"hud","hud_x":"40","hud_y":"-20"}` (strings; an axis left out
   stays).
+- Per driver profile: the settings are shared by every driver profile until
+  the app's **Own settings for this driver** gives one its own copy. The app
+  tells `patchd` the profile in use (`{"cmd":"profile","id"}`) and the
+  checkbox (`{"cmd":"profile-own","id","on"}`); `patchd` keeps the shared
+  settings and each profile's own in `/var/opt/waze-on-cluster/profiles.json`
+  and writes the ones in effect into `map.state.conf`, as for any change,
+  and the app moves the running render to them. `profiles.json` is written
+  first; a write that fails is tried again, and at its start `patchd` writes
+  `map.state.conf` again from `profiles.json` when a write between the two
+  was cut short. `profile-own` is taken only for the profile last told.
+  `map.state.conf` keeps its format, so an older version reads the settings
+  in effect; changes made under an older version are replaced by
+  `profiles.json`'s at the next start while a profile has its own settings.
+  A missing, corrupt or unreadable `profiles.json` means no profile has its
+  own settings (logged).
 
 From a shell, `waze-on-cluster -c <conf> run map|panel` (`sail` is an alias
 of `map`) sets the cluster target until the service restarts and prints the
@@ -388,13 +403,15 @@ Once a second the render writes, in `/run/waze-on-cluster/` (mode 0644):
 `status.json`, the status the app shows (`state` idle, starting, showing,
 frozen or error, or unsupported on a head unit that refuses the tool; `page`; `reason`; the shared upload cap as `upload_cap_kb_per_s` and
 why as `upload_reason`, also in the app's status event); `probe.txt`, the
-sources, the depacketiser (`rtp: packets nals aus seq_gaps lost dropped bad`),
-the receive queue (`queue: N dropped, at most M of 4096 packets waiting, K KB
+sources, the depacketiser (`rtp: packets nals aus aus_by_marker seq_gaps lost
+dropped bad`), the receive queue (`queue: N dropped, at most M of 4096 packets waiting, K KB
 held`), its backlog (`backlog: the oldest packet waiting N ms, the longest
 wait M ms; K frames decoded without a picture to catch up`, with `; the
 decoder is behind the stream` while it is), the stream (`stream: whole` or
-the detail above), the decoder, the late-join verdict, the noise filter's
-tile differences and the renderer's own status. `patchd` answers
+the detail above), the decoder and the order it outputs in, the last SPS
+(`sps:`, as the log's SPS line), the frame timing since the start (`frames
+ended by the marker bit ...`, as the log's minute line), the late-join
+verdict, the noise filter's tile differences and the renderer's own status. `patchd` answers
 `{"cmd":"logs"}` with CarPlay, AVB and DLT marker lines and its own log.
 
 Every line the render logs also goes to
@@ -412,7 +429,25 @@ packets waited in it:
 `waze: 1840 frames decoded in the last minute, 12 without a picture to
 catch up, 1 changed, 0 corrupted; the last picture is not blank; 0 losses
 (0 packets), 0 dropped by the receive queue; packets waited 2.4 ms on
-average, 61 ms at most`.
+average, 61 ms at most`. A second line says how the minute's RTP frames
+ended, by their marker bit or by the next frame's timestamp, how long each
+waited from its last packet's arrival until it went to the decoder, and how
+many frames the decoder took in after each frame before that frame came out
+(0 when each comes out as it is decoded; one it takes and never outputs adds
+to frames already waiting in it, never to later ones):
+`waze: frames ended by the marker bit 0, by the next timestamp 1840; handed
+to the decoder 31.6 ms on average after their last packet, 66.0 ms at most;
+the decoder held 0.0 frames on average, 0 at most`.
+
+Each sequence's SPS is logged once, with its source:
+`waze: SPS from avb: High (profile_idc 100) level 4.2, 1920x900,
+pic_order_cnt_type 0, bitstream_restriction max_num_reorder_frames 0
+max_dec_frame_buffering 4` (`bitstream_restriction none` without it, `none
+(no VUI)` without a VUI). The decoder logs the first B slice
+(`decoder: B slices in the stream: output in display order from the next
+SPS`) and each sequence that starts in another output order than the last
+(`decoder: output in display order from this sequence`, or `decoding
+order`).
 
 For a report, use the app's **Logs** page (below), or run as root on the
 unit `sh /var/opt/waze-on-cluster/current/collect-logs.sh [-o <folder>]`:

@@ -19,16 +19,16 @@ function install(options){
    const p=m&&pending.get(m.id);
    if(!p){if(handle)handle.destroy();return;}
    pending.delete(m.id);clearTimeout(p.timer);
-   if(m.error||!handle){if(handle)handle.destroy();p.cb(Error('Internet connection failed: '+(m.error||'no socket')));return;}
+   if(m.error||!handle){if(handle)handle.destroy();const err=Error('Internet connection failed');err.code=typeof m.error==='string'&&/^[A-Z][A-Z0-9_]{1,49}$/.test(m.error)?m.error:m.error==='connect timed out'?'ETIMEDOUT':m.error==='too many connections'?'BROKER_BUSY':m.error==='bad target'?'BROKER_BAD_TARGET':'BROKER_NO_SOCKET';p.cb(err);return;}
    p.cb(null,handle);
   });
   c.on('error',()=>{});
-  c.on('exit',()=>{if(child===c)child=null;pending.forEach(p=>{clearTimeout(p.timer);p.cb(Error('Internet broker stopped'));});pending.clear();});
+  c.on('exit',()=>{if(child===c)child=null;pending.forEach(p=>{clearTimeout(p.timer);p.cb(Object.assign(Error('Internet broker stopped'),{code:'BROKER_STOPPED'}));});pending.clear();});
  }
  function connect(host,port,cb){
   if(!child)start();
   const id=++seq;
-  const timer=setTimeout(()=>{if(pending.delete(id))cb(Error('Internet connection timed out'));},20000);
+  const timer=setTimeout(()=>{if(pending.delete(id))cb(Object.assign(Error('Internet connection timed out'),{code:'BROKER_TIMEOUT'}));},20000);
   pending.set(id,{cb,timer});
   try{child.send({op:'connect',id,host,port});}catch(e){pending.delete(id);clearTimeout(timer);cb(e);}
  }
