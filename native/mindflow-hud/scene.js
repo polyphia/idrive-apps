@@ -3,7 +3,7 @@ const kernel=require('./kernel'),Settings=require('./settings');
 const calibration={horizon:20,distance:135,opacity:.85,focal:700,anchor:322};
 function local(c,origin){return [(c[0]-origin[0])*111320*Math.cos(origin[1]*Math.PI/180),(c[1]-origin[1])*111320];}
 function nearest(point,points){let best=null;for(let i=1;i<points.length;i++){const a=points[i-1],b=points[i],dx=b[0]-a[0],dy=b[1]-a[1],n=dx*dx+dy*dy;if(n<.01)continue;const t=Math.max(0,Math.min(1,((point[0]-a[0])*dx+(point[1]-a[1])*dy)/n)),q=[a[0]+t*dx,a[1]+t*dy],d=Math.hypot(q[0]-point[0],q[1]-point[1]);if(!best||d<best.distance)best={distance:d,point:q,index:i,t,heading:Math.atan2(dx,dy)};}return best;}
-function project(p,pose,settings){const v=settings||Settings.defaults,k=v.zoom/100,dx=(p[0]-pose[0])*k,dy=(p[1]-pose[1])*k,c=Math.cos(pose[2]),s=Math.sin(pose[2]),x=dx*c-dy*s,z=dx*s+dy*c;return {x:400+x*700/(z+v.distance),y:v.horizon+40770/(z+v.distance),z};}
+function project(p,pose,settings){const v=settings||Settings.defaults,k=v.zoom/100,dx=(p[0]-pose[0])*k,dy=(p[1]-pose[1])*k,c=Math.cos(pose[2]),s=Math.sin(pose[2]),x=dx*c-dy*s,z=dx*s+dy*c;const q=Settings.mapPoint([400+x*700/(z+v.distance),v.horizon+40770/(z+v.distance)],v);return {x:q[0],y:q[1],z};}
 function nearby(points,center,radius){
  const runs=[];let run=[];
  for(let i=1;i<points.length;i++){
@@ -49,7 +49,7 @@ function build(roadGeo,route,origin,pose,settings){const opacity=(settings||Sett
   const near=nearest(pose,[a,b]);if(near&&near.distance<1800){if(!run.length){run=[a];runStart=i;}run.push(b);}else flush();
   if(zb<rear)flush();
  }flush();
- const groups=[[groundEdge,[.51,.62,.69,.24*opacity]],[ground,[.57,.68,.76,.9*opacity]],[bed,[.38,.52,.61,.42*opacity]],[edge,[.15,.60,.77,.9*opacity]],[bins.NORMAL,[0,.83,.98,1]],[bins.SLOW,[1,.57,.08,1]],[bins.TRAFFIC_JAM,[1,.15,.12,1]]];
+ const groups=[[groundEdge,[.66,.67,.68,.24*opacity]],[ground,[.75,.76,.77,.9*opacity]],[bed,[.53,.54,.55,.42*opacity]],[edge,[.72,.74,.76,.9*opacity]],[bins.NORMAL,[0,.83,.98,1]],[bins.SLOW,[1,.57,.08,1]],[bins.TRAFFIC_JAM,[1,.15,.12,1]]];
  const parts=[];groups.forEach(g=>geometry(g[0]).forEach(geometry=>parts.push({geometry,color:g[1]})));
  if(parts.length>24)throw Error('Nearby scene exceeds mesh-part budget');
  let alert=null,distance=match?match.distance:Infinity;

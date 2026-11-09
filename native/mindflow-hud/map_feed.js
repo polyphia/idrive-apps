@@ -133,7 +133,7 @@ class MapFeed {
                 }
                 coordinates = this.progress.display(coordinates, f);
                 if (coordinates && coordinates.length >= 2) {
-                    return Promise.resolve({ route: { coordinates, traffic: { status: 'unavailable', age_s: 0, intervals: [] }, mapOnly: false }, generation: 'destination:' + this.full.destKey });
+                    return Promise.resolve({ route: { coordinates, traffic: { status: 'unavailable', age_s: 0, intervals: [] }, mapOnly: false, localFallback: !!(this.match&&this.match.state==='mismatch') }, generation: 'destination:' + this.full.destKey });
                 }
             } else if (this.match) {
                 this.match.onNewRoute(); this.matchedRoute = null;

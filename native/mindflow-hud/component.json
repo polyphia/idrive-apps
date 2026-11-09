@@ -1,7 +1,7 @@
 {
   "id": "mindflow-hud",
   "kind": "tool",
-  "version": "0.6.13",
+  "version": "0.6.25",
   "license": "GPL-3.0-or-later",
   "title": "HUD map",
   "description": "A clean road map around the car on the head-up display (Mapbox roads, the car position from BMW positioning, speed camera points), drawn through cluster-render; the HUD map app (robertn_hud_map) is its settings page and feeds it the car position and turn guidance. Prototype.",
@@ -4086,6 +4086,11 @@
     {
       "path": "vela_template.json",
       "from": "vela_template.json",
+      "mode": "0644"
+    },
+    {
+      "path": "route_local.js",
+      "from": "route_local.js",
       "mode": "0644"
     }
   ],

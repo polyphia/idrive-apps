@@ -9,7 +9,7 @@ function decode(bytes,x,y,z){
   const f=layer.feature(i),p=f.properties;
   if(f.type!==2||['path','pedestrian','ferry','track'].indexOf(p.class)>=0)continue;
   const g=f.toGeoJSON(x,y,z).geometry,lines=g.type==='LineString'?[g.coordinates]:g.coordinates;
-  lines.forEach(points=>roads.push({name:p.name||'',structure:p.structure||'none',layer:p.layer||0,width:['motorway','trunk','primary'].indexOf(p.class)>=0?3.2:p.class==='service'?1.1:1.8,points}));
+  lines.forEach(points=>roads.push({name:p.name||'',oneway:p.oneway===true||p.oneway===1||p.oneway==='true'||p.oneway==='yes'?true:p.oneway===-1||p.oneway==='-1'?-1:false,structure:p.structure||'none',layer:p.layer||0,width:['motorway','trunk','primary'].indexOf(p.class)>=0?3.2:p.class==='service'?1.1:1.8,points}));
  }
  return roads;
 }

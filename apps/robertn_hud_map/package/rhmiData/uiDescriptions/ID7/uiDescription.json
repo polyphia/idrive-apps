@@ -199,6 +199,182 @@
             }
           ]
         },
+        "77": {
+          "type": "button",
+          "name": "hud_currentStreetVisible",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Current street box",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "70": {
+          "type": "button",
+          "name": "hud_streetVisible",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Street text",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "71": {
+          "type": "label",
+          "name": "hud_streetWidth",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 0,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Street box width",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "72": {
+          "type": "button",
+          "name": "hud_streetNarrower",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Decrease street box width",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "73": {
+          "type": "button",
+          "name": "hud_streetWider",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Increase street box width",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "74": {
+          "type": "label",
+          "name": "hud_streetHeight",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 0,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Street box height",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "75": {
+          "type": "button",
+          "name": "hud_streetShorter",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Decrease street box height",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "76": {
+          "type": "button",
+          "name": "hud_streetTaller",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Increase street box height",
+                "type": "Text"
+              }
+            }
+          ]
+        },
         "28": {
           "type": "label",
           "name": "hud_size",
@@ -634,6 +810,138 @@
             {
               "Text": {
                 "value": "Reset display settings",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "60": {
+          "type": "label",
+          "name": "hud_mapWidth",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 0,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Map width: 100%",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "61": {
+          "type": "button",
+          "name": "hud_narrower",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Decrease map width",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "62": {
+          "type": "button",
+          "name": "hud_wider",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Increase map width",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "63": {
+          "type": "label",
+          "name": "hud_mapHeight",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 0,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Map height: 100%",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "64": {
+          "type": "button",
+          "name": "hud_shorter",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Decrease map height",
+                "type": "Text"
+              }
+            }
+          ]
+        },
+        "65": {
+          "type": "button",
+          "name": "hud_taller",
+          "properties": {
+            "Visible": {
+              "value": 1,
+              "type": "UInt"
+            },
+            "Focusable": {
+              "value": 3,
+              "type": "UInt"
+            }
+          },
+          "rows": [
+            {
+              "Text": {
+                "value": "Increase map height",
                 "type": "Text"
               }
             }

@@ -24,3 +24,7 @@ jobs:
       - run: node native/mindflow-hud/test/route_response_test.js
       - run: node native/mindflow-hud/test/uplink_dns_test.js
       - run: node native/mindflow-hud/test/postal_geocode_test.js
+      - run: node native/mindflow-hud/test/map_dimensions_test.js
+      - run: node native/mindflow-hud/test/street_text_test.js
+      - run: node native/mindflow-hud/test/local_fallback_test.js
+      - run: node native/mindflow-hud/test/local_renderer_test.js

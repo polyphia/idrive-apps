@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('fs'),path=require('path'),http=require('http'),https=require('https'),url=require('url');
 const {ClusterRender}=require('./cluster_render_client'),scene=require('./scene'),kernel=require('./kernel'),labels=require('./labels'),{Roads}=require('./roads');
-const cameras=require('./cameras'),Settings=require('./settings');
+const cameras=require('./cameras'),Settings=require('./settings'),localRoute=require('./route_local');
 const BUILD_MS=1500,GEOMETRY_GAP_MS=1300,RETRY_MS=[5000,15000,60000];
 const now=()=>{const t=process.hrtime();return t[0]*1000+t[1]/1e6;};
 function getJSON(address){return new Promise((resolve,reject)=>{
@@ -86,6 +86,10 @@ class Runtime {
    if(!this.layer)this.create();
    if(t-this.lastBuild>=BUILD_MS){
     const route=Object.assign({},this.route,{traffic:Object.assign({},this.route.traffic,{age_s:(this.route.traffic&&this.route.traffic.age_s||0)+(t-this.trafficReceived)/1000})});
+    if(route.mapOnly||route.localFallback){
+     const local=localRoute.build(this.roads,this.origin,this.pose,this.options.guidance?this.options.guidance():null);
+     if(local.coordinates){route.coordinates=local.coordinates;route.mapOnly=false;}
+    }
     const frame=scene.build(this.roads,route,this.origin,this.pose,this.settings);
     for(let i=0;i<frame.parts.length;i++){
      const part=frame.parts[i],id=i+1,signature=JSON.stringify(part.geometry);
@@ -94,12 +98,12 @@ class Runtime {
      this.cr.uniform(this.layer,'u_color',part.color,{part:id});
     }
     for(let i=frame.parts.length;i<this.parts.length;i++)this.cr.uniform(this.layer,'u_color',[0,0,0,0],{part:i+1});
-    this.cameraState=this.settings.cameras?cameras.select(this.cameraFeed.snapshot([this.origin[0]+this.pose[0]/(111320*Math.cos(this.origin[1]*Math.PI/180)),this.origin[1]+this.pose[1]/111320]),this.route.coordinates,this.origin,this.pose):{icons:[],warning:null};
+    this.cameraState=this.settings.cameras?cameras.select(this.cameraFeed.snapshot([this.origin[0]+this.pose[0]/(111320*Math.cos(this.origin[1]*Math.PI/180)),this.origin[1]+this.pose[1]/111320]),route.coordinates,this.origin,this.pose):{icons:[],warning:null};
     if(this.canUpload('l1',t)){if(!this.cr.geometry(this.labelLayer,1,labels.build(frame.roads,this.pose,this.font,this.route.mapOnly?null:frame.traffic?frame.alert:'Traffic unavailable',this.cameraState,this.settings,this.options.guidance?this.options.guidance():null)))throw Error('HUD labels rejected');this.uploaded('l1',t);}
     this.lastBuild=t;this.lastFrame=frame;
    }
-   for(let i=0;i<this.parts.length;i++){this.cr.uniform(this.layer,'u_view',Settings.view(this.settings),{part:i+1});this.cr.uniform(this.layer,'u_pose',this.pose,{part:i+1});this.cr.uniform(this.layer,'u_camera',Settings.camera(this.settings),{part:i+1});}
-   this.cr.uniform(this.labelLayer,'u_view',Settings.view(this.settings),{part:1});this.cr.uniform(this.labelLayer,'u_camera',Settings.camera(this.settings),{part:1});this.cr.uniform(this.labelLayer,'u_pose',this.pose,{part:1});
+   for(let i=0;i<this.parts.length;i++){this.cr.uniform(this.layer,'u_map',Settings.map(this.settings),{part:i+1});this.cr.uniform(this.layer,'u_view',Settings.view(this.settings),{part:i+1});this.cr.uniform(this.layer,'u_pose',this.pose,{part:i+1});this.cr.uniform(this.layer,'u_camera',Settings.camera(this.settings),{part:i+1});}
+   this.cr.uniform(this.labelLayer,'u_map',Settings.map(this.settings),{part:1});this.cr.uniform(this.labelLayer,'u_view',Settings.view(this.settings),{part:1});this.cr.uniform(this.labelLayer,'u_camera',Settings.camera(this.settings),{part:1});this.cr.uniform(this.labelLayer,'u_pose',this.pose,{part:1});
    if(!this.visible){this.cr.set(this.layer,{visible:true});this.cr.set(this.labelLayer,{visible:true});this.visible=true;this.report('HUD following active navigation');}
   }catch(e){this.error=true;this.hide();this.scheduleRetry();this.lastError=String(e&&e.message||e);this.report('HUD scene could not be built: '+this.lastError);}
  }

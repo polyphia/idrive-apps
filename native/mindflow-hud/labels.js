@@ -1,6 +1,6 @@
 'use strict';
 const scene=require('./scene'),cameras=require('./cameras'),Settings=require('./settings');
-const VS='attribute vec3 a_position;attribute vec3 a_normal;attribute vec2 a_texcoord;attribute vec4 a_color;uniform vec3 u_pose;uniform vec3 u_camera;uniform vec4 u_view;varying vec2 v_uv;varying vec4 v_color;void main(){vec2 anchor=vec2(0.);if(a_normal.z>.5){vec2 d=(a_normal.xy-u_pose.xy)*u_view.x;float c=cos(u_pose.z),s=sin(u_pose.z),x=d.x*c-d.y*s,z=d.x*s+d.y*c;anchor=vec2(400.+x*700./(z+u_camera.y),u_camera.x+u_camera.z/(z+u_camera.y));if(z<15.||z>(a_normal.z>1.5?1000.:450.))anchor=vec2(-5000.);}vec2 p=a_position.xy+anchor;p=(p-vec2(400.,240.))*u_view.y+vec2(400.,240.)+u_view.zw;gl_Position=vec4(p.x/400.-1.,1.-p.y/240.,0.,1.);v_uv=a_texcoord;v_color=a_color;}';
+const VS='attribute vec3 a_position;attribute vec3 a_normal;attribute vec2 a_texcoord;attribute vec4 a_color;uniform vec3 u_pose;uniform vec3 u_camera;uniform vec4 u_view;uniform vec4 u_map;varying vec2 v_uv;varying vec4 v_color;void main(){vec2 anchor=vec2(0.);if(a_normal.z>.5){vec2 d=(a_normal.xy-u_pose.xy)*u_view.x;float c=cos(u_pose.z),s=sin(u_pose.z),x=d.x*c-d.y*s,z=d.x*s+d.y*c;anchor=vec2(400.+x*700./(z+u_camera.y),u_camera.x+u_camera.z/(z+u_camera.y));anchor.x=400.+(anchor.x-400.)*u_map.x;float dy=anchor.y-u_map.z;anchor.y=u_map.z+min(dy,0.)*u_map.y+max(dy,0.);if(z<15.||z>(a_normal.z>1.5?1000.:450.))anchor=vec2(-5000.);}vec2 p=a_position.xy+anchor;p=(p-vec2(400.,240.))*u_view.y+vec2(400.,240.)+u_view.zw;gl_Position=vec4(p.x/400.-1.,1.-p.y/240.,0.,1.);v_uv=a_texcoord;v_color=a_color;}';
 const FS='precision mediump float;uniform sampler2D u_font;varying vec2 v_uv;varying vec4 v_color;void main(){float a=v_uv.x<0.?1.:texture2D(u_font,v_uv).r;gl_FragColor=vec4(v_color.rgb,v_color.a*a);}';
 function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=settings||Settings.defaults,anchorY=cfg.horizon+40770/cfg.distance,shiftY=anchorY-322;
  const g={positions:[],normals:[],texcoords:[],colors:[],indices:[]};
@@ -14,7 +14,7 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
  named.forEach(r=>{const n=scene.nearest(pose,r.points);if(n&&(!current||n.distance<current.distance))current=Object.assign({road:r},n);});
  // map-only HUD: the current road's name, or no box at all off-road
  const name=current&&current.distance<12?shorten(current.road.name,19,365):'',w=measure(name,19)+28;
- if(name){border(400-w/2,351+shiftY,w,34,16,1.5,[.46,.9,1,1]);box(401.5-w/2,352.5+shiftY,w-3,31,14.5,[.025,.34,.47,.86]);text(name,400-measure(name,19)/2,355+shiftY,19,[1,1,1,1]);}
+ if(name&&cfg.currentStreetVisible!==false){border(400-w/2,351+shiftY,w,34,16,1.5,[.46,.9,1,1]);box(401.5-w/2,352.5+shiftY,w-3,31,14.5,[.025,.34,.47,.86]);text(name,400-measure(name,19)/2,355+shiftY,19,[1,1,1,1]);}
  const used=new Set(current&&current.distance<12?[current.road.name]:[]),candidates=[];
  named.forEach(r=>{if(used.has(r.name))return;let best=null;for(let i=1;i<r.points.length;i++)for(let t=0;t<=1;t+=.25){const a=r.points[i-1],b=r.points[i],p=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])],q=scene.project(p,pose,cfg);if(q.z<40||q.z>400||q.x<110||q.x>680||q.y<135||q.y>300)continue;const score=Math.abs(q.x-520)+Math.abs(q.y-230)*.3;if(!best||score<best.score)best={point:p,q,score,name:r.name};}if(best)candidates.push(best);});
  candidates.sort((a,b)=>a.score-b.score);const drawn=[];
@@ -24,10 +24,21 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
  triangle([400,313+shiftY],[419,334+shiftY],[400,327+shiftY],[0,.67,.95,1]);triangle([400,313+shiftY],[400,327+shiftY],[381,334+shiftY],[0,.67,.95,1]);
  if(cameraState){
   for(const c of cameraState.icons){const q=scene.project(c.point,pose,cfg);if(q.z<15||q.z>1000||q.x<25||q.x>775||q.y<40||q.y>335)continue;const anchor=[c.point[0],c.point[1],2];
-   border(-15,-36,30,30,8,1.5,[1,.83,.41,1],anchor);box(-13.5,-34.5,27,27,6.5,[.157,.145,.106,.95],anchor);
-   border(-9,-27,18,14,2,1.7,[1,.95,.77,1],anchor);box(-4,-30,8,4,1,[1,.95,.77,1],anchor);border(-4,-24,8,8,4,1.6,[1,.95,.77,1],anchor);
+   border(-15,-36,30,30,8,1.5,[1,1,1,1],anchor);box(-13.5,-34.5,27,27,6.5,[.08,.08,.08,.85],anchor);
+   border(-9,-27,18,14,2,1.7,[1,.12,.12,1],anchor);box(-4,-30,8,4,1,[1,.12,.12,1],anchor);border(-4,-24,8,8,4,1.6,[1,.12,.12,1],anchor);
+   // Compact sign; center visible glyph ink rather than padded atlas quads.
+   const limit=cameraState.warning&&cameraState.warning.id===c.id&&/^(\d{1,3}) (km\/h|mph)$/.exec(c.limit||'');
+   if(limit){
+    const x=q.x+105<=790?30:-105,y=Math.max(10-q.y,Math.min(-58.5,470-q.y-75));
+    box(x,y,75,75,37.5,[1,1,1,1],anchor);
+    border(x,y,75,75,37.5,5,[.95,0,0,1],anchor);
+    const ink={'0':[3,8,19,31],'1':[5,8,14,31],'2':[3,8,18,31],'3':[3,8,19,31],'4':[2,8,19,31],'5':[3,8,19,31],'6':[3,8,19,31],'7':[3,8,19,31],'8':[3,8,19,31],'9':[3,8,19,31],'m':[4,14,27,31],'p':[4,14,19,37],'h':[4,8,18,31]};
+    function centered(value,size,cx,cy){let at=0,left=Infinity,right=0,top=Infinity,bottom=0;for(const ch of value){const b=ink[ch];left=Math.min(left,at+b[0]);right=Math.max(right,at+b[2]);top=Math.min(top,b[1]);bottom=Math.max(bottom,b[3]);at+=font.glyphs[ch].advance;}text(value,cx-(left+right)*size/64,cy-(top+bottom)*size/64,size,[0,0,0,1],anchor);}
+    centered(limit[1],limit[1].length>2?28:36,x+37.5,y+(limit[2]==='mph'?32:37.5));
+    if(limit[2]==='mph')centered('mph',13,x+37.5,y+53);
+   }
   }
-  if(cameraState.warning){box(24,66,Math.min(440,measure(cameras.warningText(cameraState.warning),16)+24),32,8,[.157,.145,.106,.9]);text(cameras.warningText(cameraState.warning),36,68,16,[1,.88,.63,1]);}
+
  }
  // Turn guidance (map HUD): BMW navigation's HUD maneuver (guidance_feed.js), drawn
  // by this layer because the HUD slot shows either BMW's guidance or this scene.
@@ -60,7 +71,7 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
   const U={METER:'m',KM:'km',MILE_UK:'mi',MILE_US:'mi',YARD:'yd',FEET:'ft'};
   const d=m.distance!==''&&m.distance!==undefined&&m.distance!==null?String(m.distance)+(U[m.unit]?' '+U[m.unit]:''):'';
   if(d)text(d,cx-measure(d,26)/2,120,26,white);
-  if(m.text){const t=shorten(m.text,15,300),w=measure(t,15)+20;text(t,180-w,166,15,dim);}
+
  }
  if(guidance){
   const start=g.positions.length;guidancePanel(guidance);
@@ -71,7 +82,32 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
    g.positions[i]=(sx-400-v[2])/k+400;g.positions[i+1]=(sy-240-v[3])/k+240;
   }
  }
+ if(guidance&&guidance.text&&cfg.streetVisible!==false){
+  const start=g.positions.length,layout=streetLayout(guidance.text,font,cfg);
+  layout.lines.forEach(l=>text(l.text,l.x,l.y,layout.size,[.62,.8,.9,1]));
+  const v=Settings.view(cfg),k=v[1]||1;
+  for(let i=start;i<g.positions.length;i+=3){g.positions[i]=(g.positions[i]-400-v[2])/k+400;g.positions[i+1]=(g.positions[i+1]-240-v[3])/k+240;}
+ }
  if(traffic)text(traffic,24,24,16,[1,.8,.48,1]);
  return g;
 }
-module.exports={VS,FS,build};
+// Bottom-anchored word wrapping. Account for glyph atlas padding as well as advance,
+// so every quad stays inside the box, including long unbroken street names.
+function streetLayout(value,font,cfg){
+ const size=15*(cfg.streetSize||100)/100,scale=size/32,width=300*(cfg.streetWidth||100)/100,height=60*(cfg.streetHeight||100)/100;
+ const right=766+(cfg.streetX||0),bottom=456+(cfg.streetY||0),left=right-width,top=bottom-height;
+ const glyph=ch=>font.glyphs[ch]||font.glyphs['?'];
+ const extent=s=>{let advance=0,end=0;Array.from(s).forEach(ch=>{const f=glyph(ch);end=Math.max(end,advance+f.w*scale);advance+=f.advance*scale;});return end;};
+ const lineHeight=Math.max.apply(null,Object.keys(font.glyphs).map(ch=>font.glyphs[ch].h*scale)),capacity=Math.floor(height/lineHeight),lines=[];
+ if(!capacity)return {lines:[],size,left,top,right,bottom};
+ let line='';
+ String(value).trim().split(/\s+/).filter(Boolean).forEach(word=>{
+  if(line&&extent(line+' '+word)<=width){line+=' '+word;return;}
+  if(line){lines.push(line);line='';}
+  Array.from(word).forEach(ch=>{if(line&&extent(line+ch)>width){lines.push(line);line='';}if(extent(ch)<=width)line+=ch;});
+ });
+ if(line)lines.push(line);
+ if(lines.length>capacity){lines.length=capacity;let chars=Array.from(lines[capacity-1]);while(chars.length&&extent(chars.join('')+'...')>width)chars.pop();lines[capacity-1]=chars.join('')+'...';}
+ return {size,left,top,right,bottom,lines:lines.map((t,i)=>({text:t,x:right-extent(t),y:bottom-(lines.length-i)*lineHeight}))};
+}
+module.exports={VS,FS,build,streetLayout};

@@ -110,15 +110,25 @@ function parse(data,requested){
  if(!candidates.length)throw Error('Route validation failed: '+rejections.slice(0,3).join('; '));
  return {candidates,quality:'unknown',destination_key:requested.slice(1).map(p=>p.join(',')).join(';'),alternatives_returned:candidates.length,provider:'vela',attribution:'Google Maps'};
 }
-function geocodes(data,postal){
+function geocodes(data,postal,origin,query){
  if(!data||!Array.isArray(data.features))throw Error('Invalid geocoding response');
  const out=[];
  data.features.forEach(f=>{const p=f.properties||{},c=p.coordinates||{},r=Array.isArray(c.routable_points)?c.routable_points.find(v=>v.name==='default'):null,xy=r?[r.longitude,r.latitude]:[c.longitude,c.latitude];
   if(postal){const ctx=p.context||{},code=ctx.postcode&&ctx.postcode.name||(p.feature_type==='postcode'?p.name:null),country=ctx.country&&ctx.country.country_code;if(code!==postal||String(country).toUpperCase()!=='PT')return;}
-  if(['address','street'].concat(postal?['postcode']:[]).indexOf(p.feature_type)<0||!point(xy)||out.some(v=>G.dist(v.point,xy)<30))return;
-  out.push({point:xy,quality:p.feature_type==='address'&&p.match_code&&p.match_code.confidence==='exact'?'exact':p.feature_type==='street'?'street':'partial'});
+  if(['address','street','place','locality','neighborhood','postcode'].indexOf(p.feature_type)<0||!point(xy)||out.some(v=>G.dist(v.point,xy)<30))return;
+  out.push({point:xy,name:String(p.name||''),type:p.feature_type,label:String(p.full_address||[p.name,p.place_formatted].filter(Boolean).join(', ')||f.place_name||'').slice(0,512),quality:p.feature_type==='address'&&p.match_code&&p.match_code.confidence==='exact'?'exact':p.feature_type==='street'?'street':'partial'});
  });
- if(!out.length)throw Error('No address candidates; supply a street address or coordinates');return out.slice(0,3);
+ if(!out.length)throw Error('No address candidates; supply a street address or coordinates');
+ if(origin){
+  // Automatic short text is not enough evidence for a destination on another continent.
+  const nearby=out.filter(v=>G.dist(origin,v.point)<=1500000);
+  if(!nearby.length)throw Error('No plausible destination within 1500 km; more specific destination needed');
+  const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const exactCity=v=>['place','locality'].indexOf(v.type)>=0&&norm(v.name)===norm(query);
+  nearby.sort((a,b)=>Number(exactCity(b))-Number(exactCity(a))||G.dist(origin,a.point)-G.dist(origin,b.point));
+  return nearby.slice(0,3);
+ }
+ return out.slice(0,3);
 }
 class Provider{
  constructor(options){const o=options||{};this.get=o.get||request;}
@@ -131,7 +141,7 @@ class Provider{
    if(d.coordinates!==undefined){if(!point(d.coordinates))throw Error('Invalid destination coordinates');found=[{point:d.coordinates,quality:'unknown'}];}
    else {if(typeof d.address!=='string'||!d.address.trim()||d.address.length>2048||typeof token!=='string'||!token)throw Error('Address and Mapbox token required');
     const match=/\b(\d{4}-\d{3})\b/.exec(d.address),postal=match&&match[1];
-    found=geocodes(await this.get('https://api.mapbox.com/search/geocode/v6/forward?autocomplete=false&limit=3&types='+(postal?'postcode,address,street&country=pt':'address,street')+'&proximity='+origin.join(',')+'&q='+encodeURIComponent(d.address)+'&access_token='+encodeURIComponent(token)),postal).slice(0,1);}
+    found=geocodes(await this.get('https://api.mapbox.com/search/geocode/v6/forward?autocomplete=false&limit=10&types='+(postal?'postcode,address,street&country=pt':'address,street,place,locality,neighborhood,postcode')+'&proximity='+origin.join(',')+'&q='+encodeURIComponent(d.address)+'&access_token='+encodeURIComponent(token)),postal,origin,d.address).slice(0,1);}
    const next=[];combos.forEach(c=>found.forEach(f=>{if(next.length<3)next.push(c.concat([f]));}));combos=next;
   }
   const sets=[],failures=[];for(const combo of combos){try{const pts=[origin].concat(combo.map(v=>v.point));const set=parse(await this.get(directionsURL(pts)),pts);set.quality=combos.length===1&&combo.every(v=>v.quality==='exact')?'exact':'partial';sets.push(set);}catch(e){const msg=String(e&&e.message||'');failures.push(/^(Route service |Route response |Route validation failed: |No web driving routes)/.test(msg)?msg.slice(0,240):'Unexpected route response');}}
