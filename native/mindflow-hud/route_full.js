@@ -9,6 +9,7 @@
 const https = require('https'), url = require('url');
 
 const MIN_REROUTE_MS = 6000;    // never re-request faster than this
+const RETRY_AFTER_FAIL_MS = 3000; // after a failed or rejected request
 const STEP_MANEUVERS = /^(turn|roundabout|rotary|fork|merge|end of road|on ramp|off ramp|continue|new name|arrive)/i;
 
 function coordOk(c) { return Array.isArray(c) && c.length >= 2 && isFinite(c[0]) && Math.abs(c[0]) <= 180 && isFinite(c[1]) && Math.abs(c[1]) <= 85; }
@@ -121,6 +122,8 @@ class RouteFull {
         }).catch(function (e) {
             if (generation !== self.generation || request !== self.requestSerial) return;
             self.fetching = false; self.lastError = e && e.message || String(e);
+            // a rejected/failed correction may be retried sooner than a successful one
+            self.lastFetchAt = Math.min(self.lastFetchAt, self.wall() - MIN_REROUTE_MS + RETRY_AFTER_FAIL_MS);
         });
     }
     // the full line to draw; plans on first need

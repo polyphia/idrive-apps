@@ -11,6 +11,10 @@ const { RouteProgress } = require('./route_match');
 const ROUTING = '/var/opt/mindflow-hud-routing/current/routing.json', BUNDLED = require('path').join(__dirname, 'mapbox.json');
 const MAX_AGE_S = 3;          // a fix older than this (measured or since receipt) is not shown
 const AHEAD_M = 150;          // length of the heading stub
+const PHONE_HOLD_S = 10;      // keep the route line this long after the phone's last maneuver
+const FIT_S = 1.6;            // speed and course are fitted over the fixes of this window
+const JUMP_M = 15;            // fix this far (+ half the distance driven) from the prediction is a jump
+const RESYNC_S = 4;           // a "jump" that persists this long is the real position
 const FIX_OK = { FIX_2D: 25, FIX_3D: 12, 2: 25, 3: 12 };   // assumed accuracy per fix type (BMW reports none)
 const nowNs = () => { const t = process.hrtime(); return t[0] * 1e9 + t[1]; };
 
@@ -42,7 +46,7 @@ class MapFeed {
         this.fix = null; this.prev = null; this.heading = null; this.reason = 'waiting for car GPS';
         this.token = null; this.count = 0;
         this.full = o.full || null; this.match = o.match || null;
-        this.maneuver = o.maneuver || null; this.matchedRoute = null; this.matchedFix = null; this.progress = new RouteProgress();
+        this.maneuver = o.maneuver || null; this.phoneAt = null; this.matchedRoute = null; this.matchedFix = null; this.progress = new RouteProgress();
     }
     // {cmd:'position', raw: RawGNSSPositionData, current: CurrentLocation|null}
     position(msg) {
@@ -67,18 +71,54 @@ class MapFeed {
     located(lat, lon, t, age, fixType, acc, msg) {
         const raw = msg.raw || {};
         const fix = { lat, lon, accuracy: acc, at: t - age * 1e9, received: t, fixType };
-        // speed and course from successive fixes; BMW's heading when moving slowly or when it is all there is
-        let speed = null;
-        if (this.fix) {
-            const dt = (fix.at - this.fix.at) / 1e9, d = metres(this.fix, fix);
-            if (dt > 0.2 && dt < 5) { speed = d / dt; if (d >= 3 && speed >= 1.5) this.heading = bearing(this.fix, fix); }
+        const good = this.lastGood;
+        // Multipath jump: a fix far from where the last good fix, speed and course put the car.
+        // Show the dead-reckoned position instead and mark it (route matching ignores it);
+        // a jump that persists RESYNC_S is accepted as the real position.
+        if (good && Number.isFinite(good.speed) && good.speed >= 1.5 && this.heading !== null) {
+            const dt = (fix.at - good.at) / 1e9;
+            if (dt > 0 && dt < MAX_AGE_S) {
+                const p = ahead(good, this.heading, good.speed * dt), predicted = { lon: p[0], lat: p[1] };
+                // the gate grows with the dead-reckoned time only up to 1 s, so a multipath offset
+                // lasting a few seconds is not adopted halfway through (and then jumps back)
+                const jumped = metres(predicted, fix) > JUMP_M + 0.5 * good.speed * Math.min(dt, 1);
+                if (jumped && (!this.jumpSince || (t - this.jumpSince) / 1e9 < RESYNC_S)) {
+                    if (!this.jumpSince) this.jumpSince = t;
+                    this.prev = this.fix; this.fix = Object.assign({}, fix, predicted, { speed: good.speed, deadReckoned: true });
+                    this.count++; this.reason = null;
+                    return;
+                }
+            }
         }
+        this.jumpSince = 0;
+        // Speed and course from the fixes; BMW's heading when moving slowly or when it is all there is.
+        // Velocity is a least-squares fit over the fixes of the last FIT_S (at least the previous
+        // fix): at 5-10 Hz this averages per-fix jitter that a two-point course would turn into
+        // tens of degrees of heading error; at 1 Hz it is the plain two-fix course.
+        let speed = null;
+        const recent = (this.recent || []).filter(p => (fix.at - p.at) / 1e9 > 0 && (fix.at - p.at) / 1e9 < 5);
+        let window = recent.filter(p => (fix.at - p.at) / 1e9 <= FIT_S);
+        if (!window.length && recent.length) window = recent.slice(-1);
+        if (window.length) {
+            const k = Math.PI / 180, cx = 6371000 * Math.cos(lat * k) * k, cy = 6371000 * k;
+            const pts = window.concat([fix]).map(p => [(p.at - fix.at) / 1e9, (p.lon - lon) * cx, (p.lat - lat) * cy]);
+            const n = pts.length, tm = pts.reduce((a, p) => a + p[0], 0) / n, xm = pts.reduce((a, p) => a + p[1], 0) / n, ym = pts.reduce((a, p) => a + p[2], 0) / n;
+            let stt = 0, stx = 0, sty = 0;
+            for (const p of pts) { stt += (p[0] - tm) * (p[0] - tm); stx += (p[0] - tm) * (p[1] - xm); sty += (p[0] - tm) * (p[2] - ym); }
+            const span = -pts[0][0];
+            if (span > 0.2 && stt > 0) {
+                const vx = stx / stt, vy = sty / stt; speed = Math.hypot(vx, vy);
+                if (speed >= 1.5 && speed * span >= 3) this.heading = (Math.atan2(vx, vy) / k + 360) % 360;
+            }
+        }
+        recent.push({ lat, lon, at: fix.at });
+        this.recent = recent.slice(-40);
         const cur = msg.current && Number(msg.current.heading), rh = Number(raw.heading);
         if (this.heading === null || speed === null || speed < 1.5) {
             if (Number.isFinite(cur) && cur !== 0) this.heading = (cur % 360 + 360) % 360;
             else if (Number.isFinite(rh) && rh !== 0) this.heading = (rh % 360 + 360) % 360;
         }
-        fix.speed = speed; this.prev = this.fix; this.fix = fix; this.count++; this.reason = null;
+        fix.speed = speed; this.prev = this.fix; this.fix = fix; this.lastGood = fix; this.count++; this.reason = null;
     }
     current() {
         const f = this.fix;
@@ -110,8 +150,12 @@ class MapFeed {
         }
         if (path === '/route') {
             const h = this.heading !== null ? this.heading : 0;
-            const phone = this.maneuver ? this.maneuver() : null;
-            if (this.full && this.full.active() && (!this.maneuver || phone)) {
+            const phone = this.maneuver ? this.maneuver() : null, now = this.clock();
+            // While Android Auto recalculates, its maneuver can be missing for several seconds.
+            // Keep the (possibly clipped) line for PHONE_HOLD_S; GPS off-route checks continue.
+            if (phone) this.phoneAt = now;
+            const held = !phone && this.phoneAt !== null && (now - this.phoneAt) / 1e9 <= PHONE_HOLD_S;
+            if (this.full && this.full.active() && (!this.maneuver || phone || held)) {
                 let coordinates = this.full.coordinates(f);
                 if (coordinates) this.progress.update(this.full.route, f);
                 if (coordinates && this.match) {
@@ -120,12 +164,16 @@ class MapFeed {
                     }
                     const moving = Number.isFinite(f.speed) && f.speed >= 1.5;
                     if (moving) {
-                        // Repeated renderer polls of one fix are not new observations.
-                        if (this.matchedFix !== f.at) {
-                            this.match.update(Object.assign({}, f, { routeAlong: this.progress.along }), this.full.route, phone); this.matchedFix = f.at;
+                        // Repeated renderer polls of one fix are not new observations, and a
+                        // dead-reckoned position (GPS jump) is no evidence about the route.
+                        if (this.matchedFix !== f.at && !f.deadReckoned) {
+                            this.match.update(Object.assign({}, f, { routeAlong: this.progress.along, heading: this.heading }), this.full.route, phone); this.matchedFix = f.at;
                         }
+                        // The clipped line and local fallback react to the phone at once; Vela is
+                        // asked only when the phone's new maneuver has settled.
                         const requested = this.match.takeReroute();
-                        if (requested || this.match.state === 'mismatch') this.full.reroute(f, 'phone-mismatch');
+                        const settled = typeof this.match.phoneSettled !== 'function' || this.match.phoneSettled();
+                        if ((requested || this.match.state === 'mismatch') && settled) this.full.reroute(f, 'phone-mismatch');
                     } else {
                         this.match.pause(); this.matchedFix = null;
                     }
@@ -135,7 +183,9 @@ class MapFeed {
                 if (coordinates && coordinates.length >= 2) {
                     return Promise.resolve({ route: { coordinates, traffic: { status: 'unavailable', age_s: 0, intervals: [] }, mapOnly: false, localFallback: !!(this.match&&this.match.state==='mismatch') }, generation: 'destination:' + this.full.destKey });
                 }
-            } else if (this.match) {
+            } else if (this.match && !(this.full && this.full.active())) {
+                // Trip ended. A phone gap during a trip keeps the mismatch and its clip, so the
+                // disputed line does not reappear unclipped when the phone returns.
                 this.match.onNewRoute(); this.matchedRoute = null;
             }
             return Promise.resolve({ route: { coordinates: [[f.lon, f.lat], ahead(f, h, AHEAD_M)], traffic: { age_s: 0, intervals: [] }, mapOnly: true }, generation: 'map' });
@@ -148,4 +198,4 @@ class MapFeed {
             : { gps: this.reason || 'car GPS fix too old', fixes: this.count, mapbox: !!this.mapboxToken() };
     }
 }
-module.exports = { MapFeed, utcMs, bearing, ahead };
+module.exports = { MapFeed, utcMs, bearing, ahead, metres };

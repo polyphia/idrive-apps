@@ -3,6 +3,7 @@ const fs=require('fs'),path=require('path'),http=require('http'),https=require('
 const {ClusterRender}=require('./cluster_render_client'),scene=require('./scene'),kernel=require('./kernel'),labels=require('./labels'),{Roads}=require('./roads');
 const cameras=require('./cameras'),Settings=require('./settings'),localRoute=require('./route_local');
 const BUILD_MS=1500,GEOMETRY_GAP_MS=1300,RETRY_MS=[5000,15000,60000];
+const REBASE_M=20000,LOCAL_RETRY_MS=1000,LINE_PROBE_MS=250,TRANSIENT_LOCAL=/^(ambiguous current road|no road matches car heading|no confirmed forward segment)$/;
 const now=()=>{const t=process.hrtime();return t[0]*1000+t[1]/1e6;};
 function getJSON(address){return new Promise((resolve,reject)=>{
  const u=url.parse(address),transport=u.protocol==='https:'?https:http;
@@ -32,6 +33,9 @@ class Runtime {
  // replacement: every part upload is spaced GEOMETRY_GAP_MS apart, timed when sent.
  canUpload(key,t){return !this.geoAt||!this.geoAt[key]||t-this.geoAt[key]>=GEOMETRY_GAP_MS;}
  uploaded(key,t){(this.geoAt=this.geoAt||{})[key]=t;}
+ // a re-centre must replace every uploaded part in the same tick (the next build after poll)
+ canRebase(t){const at=this.geoAt||{};return Object.keys(at).every(k=>t-at[k]>=GEOMETRY_GAP_MS);}
+ rebase(){const shift=scene.local(this.origin,this.rebaseTo);this.pose[0]+=shift[0];this.pose[1]+=shift[1];this.target[0]+=shift[0];this.target[1]+=shift[1];this.origin=this.rebaseTo;this.rebaseTo=null;this.rebases=(this.rebases||0)+1;}
  // After a refusal the scene is rebuilt on its own: 5 s, 15 s, then every 60 s.
  scheduleRetry(){const now=this.clock();this.refusals=(this.refusals||[]).filter(x=>now-x<600000);this.refusals.push(now);this.retryAt=now+RETRY_MS[Math.min(this.refusals.length,RETRY_MS.length)-1];}
  hide(){
@@ -48,15 +52,22 @@ class Runtime {
    const values=await Promise.all([this.fetch(this.feed+'/route'),this.fetch(this.feed+'/state')]);if(this.closed||!this.settings.enabled)return;
    if(!valid(values[0],values[1])){this.clear();return;}
    const r=values[0],f=values[1].fix,t=this.clock(),trip=String(r.generation);
-   if(this.trip!==trip){this.clear();this.trip=trip;this.roads=[];this.origin=null;this.nextRoads=0;}
-   const p=[f.longitude,f.latitude],rebase=!this.origin||Math.hypot.apply(null,scene.local(p,this.origin))>800;
-   if(rebase){this.hide();this.origin=p;this.pose=[0,0,this.pose[2]];}
+   // A new generation changes only the route (map-only <-> destination, new destination).
+   // Roads are geography: keep them and the layers, and redraw the new line promptly.
+   if(this.trip!==trip){this.trip=trip;this.lastBuild=-Infinity;}
+   // Re-centre the local frame rarely (REBASE_M) without dropping the layers: wait until every
+   // part may be replaced again, shift the pose into the new frame and rebuild all geometry at once.
+   // cluster-render paces geometry uploads by a byte budget while the pose uniform applies at
+   // once, so a re-centre can show a brief jump; highp positions stay mm-precise at 20 km.
+   const p=[f.longitude,f.latitude];
+   if(!this.origin){this.origin=p;this.pose=[0,0,this.pose[2]];}
+   if(Math.hypot.apply(null,scene.local(p,this.origin))>(this.options.rebaseM||REBASE_M))this.rebaseTo=p;
    this.target=scene.local(p,this.origin).concat(this.target[2]);
    this.route=r.route;this.trafficReceived=t;
    const match=scene.nearest(this.target,r.route.coordinates.map(c=>scene.local(c,this.origin)));
    if(Number.isFinite(f.heading_deg)&&f.speed_mps>=1.5)this.heading=f.heading_deg*Math.PI/180;
    this.target[2]=this.heading!==null?this.heading:match&&match.distance<30?match.heading:0;
-   if(!this.visible||rebase)this.pose=this.target.slice();
+   if(!this.visible)this.pose=this.target.slice();
    this.lastFeed=t;this.cameraFeed.ensure(p);
    if(!this.roadSource){const config=await this.fetch(this.feed+'/mapbox-config');if(!config||typeof config.token!=='string'||config.token.indexOf('pk.')!==0)throw Error('Mapbox token unavailable');this.roadSource=new Roads(config.token);}
    if(t>=this.nextRoads&&!this.loadingRoads){
@@ -84,12 +95,29 @@ class Runtime {
   const k=1-Math.exp(-dt/.16);this.pose[0]+=(this.target[0]-this.pose[0])*k;this.pose[1]+=(this.target[1]-this.pose[1])*k;const dh=((this.target[2]-this.pose[2]+Math.PI*3)%(Math.PI*2))-Math.PI;this.pose[2]+=dh*k;
   try{
    if(!this.layer)this.create();
-   if(t-this.lastBuild>=BUILD_MS){
+   let local=null;
+   const due=t-this.lastBuild>=BUILD_MS,fallbackMode=!!(this.route.mapOnly||this.route.localFallback),fallback=due&&fallbackMode;
+   // No cyan on screen: probe every LINE_PROBE_MS and build as soon as a line exists,
+   // instead of waiting for the next scheduled build.
+   // The local line is drawn from the phone's turn: a new turn (Android Auto recalculated)
+   // redraws it at once, as does a missing line.
+   const phone=fallbackMode&&this.options.guidance?this.options.guidance():null,turnSig=phone?[phone.kind,phone.direction,phone.side,phone.exit,phone.text].join('|'):null;
+   const turnChanged=fallbackMode&&this.shownLocal&&turnSig!==null&&turnSig!==this.builtTurnSig;
+   const probe=!due&&(this.shownCyan===false||turnChanged)&&t-this.lastBuild>=LINE_PROBE_MS&&t-(this.lineProbeAt||0)>=LINE_PROBE_MS;
+   if(probe)this.lineProbeAt=t;
+   if(fallback||(probe&&fallbackMode))local=localRoute.build(this.roads,this.origin,this.pose,this.options.guidance?this.options.guidance():null);
+   const early=probe&&(fallbackMode?!!(local&&local.coordinates):true);
+   // Just after a corner the local line can fail for a moment (heading between two roads).
+   // Keep the local line already on screen and retry every tick for up to LOCAL_RETRY_MS,
+   // rather than rebuilding without cyan and waiting a whole BUILD_MS.
+   const retry=fallback&&!local.coordinates&&this.shownLocal&&TRANSIENT_LOCAL.test(local.reason)&&(!this.localRetrySince||t-this.localRetrySince<LOCAL_RETRY_MS);
+   if(retry){if(!this.localRetrySince)this.localRetrySince=t;}
+   else if(due||early){
+    this.localRetrySince=0;
+    if(this.rebaseTo&&this.canRebase(t))this.rebase();
     const route=Object.assign({},this.route,{traffic:Object.assign({},this.route.traffic,{age_s:(this.route.traffic&&this.route.traffic.age_s||0)+(t-this.trafficReceived)/1000})});
-    if(route.mapOnly||route.localFallback){
-     const local=localRoute.build(this.roads,this.origin,this.pose,this.options.guidance?this.options.guidance():null);
-     if(local.coordinates){route.coordinates=local.coordinates;route.mapOnly=false;}
-    }
+    if(local&&local.coordinates){route.coordinates=local.coordinates;route.mapOnly=false;}
+    this.shownLocal=!!(local&&local.coordinates);this.shownCyan=!route.mapOnly;this.builtTurnSig=this.shownLocal?turnSig:null;
     const frame=scene.build(this.roads,route,this.origin,this.pose,this.settings);
     for(let i=0;i<frame.parts.length;i++){
      const part=frame.parts[i],id=i+1,signature=JSON.stringify(part.geometry);

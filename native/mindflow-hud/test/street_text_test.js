@@ -15,9 +15,9 @@ function streetVertices(c){const a=L.build([], [0,0,0],font,null,null,Object.ass
 const a=streetVertices(cfg),other=S.validate(Object.assign({},cfg,{turnX:-200,turnY:-100,turnSize:200,size:50,x:100,y:50,mapWidth:200,mapHeight:200})),b=streetVertices(other);
 assert(a.length>0);a.forEach((v,i)=>assert(Math.abs(v-b[i])<1e-7,'street position independent of map and arrow'));
 for(let i=0;i<a.length;i+=3){assert(a[i]>=layout.left-1e-7&&a[i]<=layout.right+1e-7);assert(a[i+1]>=layout.top-1e-7&&a[i+1]<=layout.bottom+1e-7);}
-assert.deepStrictEqual(P.change('left',cfg,null,'street').values,{streetX:-10});
+assert.deepStrictEqual(P.change('left',cfg,null,'street').values,{streetX:cfg.streetX-10});
 assert.deepStrictEqual(P.change('larger',cfg,null,'street').values,{streetSize:110});
-assert.deepStrictEqual(P.change('centre',cfg,null,'street').values,{streetX:0,streetY:0});
+assert.deepStrictEqual(P.change('centre',cfg,null,'street').values,S.centre(cfg,'street'));
 assert.deepStrictEqual(P.change('streetVisible',cfg).values,{streetVisible:false});
 assert.equal(P.nextMode('map'),'turn');assert.equal(P.nextMode('turn'),'street');assert.equal(P.nextMode('street'),'map');
 assert.equal(S.validate({}).streetVisible,true);

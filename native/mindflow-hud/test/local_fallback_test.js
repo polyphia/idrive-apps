@@ -21,3 +21,9 @@ const data={features:[feature('Porto','street',-60.79154,-37.53718),feature('Por
 assert.equal(geocodes(data,null,o,'Porto')[0].type,'place');
 assert.throws(()=>geocodes({features:[data.features[0]]},null,o,'Porto'),/No plausible destination/);
 console.log('PASS Porto city selected; Argentina rejected before directions request');
+{ // dense city centre: streets every 60 m, a vertex every 15 m (thousands of segments within 800 m)
+ const dense=[];for(let a=-1500;a<=1500;a+=60){const v=[],h=[];for(let b=-1500;b<=1500;b+=15){v.push([a,b]);h.push([b,a]);}dense.push(road(v,'V'+a),road(h,'H'+a));}
+ const t0=Date.now(),r=local.build(dense,o,[5,3,0],{kind:'intersection',direction:'RIGHT',distance:'300',unit:'METER',text:''});
+ assert(r.coordinates,'dense city geometry must still give a local line, got: '+r.reason);
+ console.log('PASS dense city road graph gives a local line ('+(Date.now()-t0)+' ms)');
+}

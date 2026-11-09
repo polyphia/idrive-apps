@@ -15,6 +15,7 @@
  */
 const fs = require('fs'), net = require('net'), path = require('path');
 const Settings = require('./settings'), { Runtime } = require('./runtime'), { MapFeed } = require('./map_feed');
+const { bearing, metres: metresBetween } = require('./map_feed');
 const { RoutePredict } = require('./route_predict'), { RouteFull } = require('./route_full'), { RouteMatch, phoneSide, phoneMetres, routeSide } = require('./route_match'), { Provider } = require('./vela_routes');
 const { DestinationCapture } = require('./destination_capture');
 
@@ -47,7 +48,8 @@ class Service {
             type: 'status', version: 1, destinationCapture:this.destinationCapture.state, settings: this.settings, visible: r.visible, feed: r.route ? 'active' : 'waiting',
             renderer: r.error ? 'refused' : r.cr.ready ? 'connected' : 'waiting',
             renderer_detail: r.lastRefusal ? r.lastRefusal.op + ': ' + r.lastRefusal.reason : r.lastError || (this.renderReport ? this.renderReport.message : null),
-            map: this.mapFeed.status(), guidance: this.currentGuidance(), destination: this.destError || (this.full.active() ? 'set' : null), error: this.error || null
+            map: this.mapFeed.status(), guidance: this.currentGuidance(),
+            destination: this.destError || (this.full.active() ? 'set' : null), error: this.error || null
         };
     }
     command(msg) {
@@ -69,8 +71,10 @@ class Service {
     setGuidance(m) {
         const s = (v, n) => (v === null || v === undefined ? null : String(v).slice(0, n));
         const active = m && typeof m === 'object' && typeof m.kind === 'string';
-        if (!active) { if (this.guidance && this.guidanceInactiveSince === null) this.guidanceInactiveSince = Date.now(); this.guidance = null; return; }
-        if (this.guidance === null && this.captureAttempted && this.guidanceInactiveSince !== null && Date.now() - this.guidanceInactiveSince >= 10000) this.captureAttempted = false;
+        // An empty maneuver list is normal while Android Auto recalculates: keep the last
+        // maneuver and let it age out (GUIDANCE_MAX_AGE_MS) instead of dropping it at once.
+        if (!active) { if (this.guidance && this.guidanceInactiveSince === null) this.guidanceInactiveSince = Date.now(); return; }
+        if (this.captureAttempted && this.guidanceInactiveSince !== null && Date.now() - this.guidanceInactiveSince >= 10000) this.captureAttempted = false;
         if (!this.captureAttempted) this.startDestinationCapture();
         this.guidanceInactiveSince = null;
         this.guidance = {
@@ -129,21 +133,31 @@ class Service {
             const fix = this.mapFeed.current();
             const moving = fix && Number.isFinite(fix.speed) && fix.speed >= 1.5;
             const phone = moving && reason !== 'first' ? this.currentGuidance() : null, side = phoneSide(phone), distance = phoneMetres(phone);
+            // Vela has no heading and answers after a delay: measure candidates from where the
+            // car is now, and rule out a start that runs against the car's travel direction.
+            const here = fix ? { lon: fix.lon, lat: fix.lat } : null, travelled = here ? metresBetween({ lon: from[0], lat: from[1] }, here) : 0;
+            const heading = moving && reason !== 'first' ? this.mapFeed.heading : null;
+            const startBearing = c => { const p = c.coordinates, a = { lon: p[0][0], lat: p[0][1] }; for (let i = 1; i < p.length; i++) { const b = { lon: p[i][0], lat: p[i][1] }; if (metresBetween(a, b) >= 25) return bearing(a, b); } return null; };
             const score = c => {
-                const step = (c.steps || []).find(x => Number.isFinite(x.along) && x.along > 10 && x.maneuver && !/^(depart|destination|arrive)$/.test(x.maneuver.type));
+                const step = (c.steps || []).find(x => Number.isFinite(x.along) && x.along > travelled + 10 && x.maneuver && !/^(depart|destination|arrive)$/.test(x.maneuver.type));
                 const route = step ? routeSide({ type: step.maneuver.type, modifier: step.maneuver.side }) : null;
                 let n = 0;
+                const b = Number.isFinite(heading) && Array.isArray(c.coordinates) && c.coordinates.length >= 2 ? startBearing(c) : null;
+                if (b !== null && Math.abs(((b - heading + 540) % 360) - 180) > 100) n += 10000000;
                 if (side && route && side !== route) n += 1000000;
                 if (phone && phone.kind === 'roundabout' && step && step.maneuver) {
                     if (step.maneuver.type !== 'roundabout' && step.maneuver.type !== 'rotary') n += 1000000;
                     const exit = step.maneuver.roundabout_exit;
                     if (Number.isInteger(phone.exit) && phone.exit > 0 && Number.isInteger(exit) && exit > 0 && phone.exit !== exit) n += 1000000;
                 }
-                if (distance !== null && step) n += Math.abs(distance - step.along);
+                if (distance !== null && step) n += Math.abs(distance - (step.along - travelled));
                 if (!route && side) n += 50000;
                 return n;
             };
             candidates.sort((a, b) => score(a) - score(b) || a.duration_s - b.duration_s || a.alternative_index - b.alternative_index);
+            // A correction that still contradicts the phone (or the travel direction) would be drawn
+            // and rejected again: keep the clipped line and local fallback instead.
+            if (reason === 'phone-mismatch' && (phone || Number.isFinite(heading)) && score(candidates[0]) >= 1000000) throw Error('No Vela route agrees with the phone');
             return candidates[0];
         });
     }

@@ -28,3 +28,5 @@ jobs:
       - run: node native/mindflow-hud/test/street_text_test.js
       - run: node native/mindflow-hud/test/local_fallback_test.js
       - run: node native/mindflow-hud/test/local_renderer_test.js
+      - run: node native/mindflow-hud/test/panel_position_test.js
+      - run: node native/mindflow-hud/test/route_mismatch_sim_test.js

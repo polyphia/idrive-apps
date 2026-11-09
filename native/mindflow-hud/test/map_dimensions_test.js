@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..'),S=require(root+'/settings'),scene=requir
 const page=require(path.join(root,'../../apps/robertn_hud_map/src/page'));
 const base=S.validate({size:75,x:20,y:10}),anchor=base.horizon+40770/base.distance;
 assert.equal(base.mapWidth,100);assert.equal(base.mapHeight,100);
-for(const width of [50,100,200])for(const height of [50,100,200]){
+for(const width of [25,50,100,200])for(const height of [25,50,100,200]){
  const cfg=Object.assign({},base,{mapWidth:width,mapHeight:height});
  assert.deepStrictEqual(S.mapPoint([400,anchor],cfg),[400,anchor]);
  const left=S.mapPoint([300,anchor-100],cfg),right=S.mapPoint([500,anchor-100],cfg);
@@ -18,7 +18,7 @@ for(const width of [50,100,200])for(const height of [50,100,200]){
  assert.deepStrictEqual(b.positions,a.positions,'arrow geometry stays unchanged');
 }
 assert.equal(page.change('wider',S.validate({mapWidth:200})).values.mapWidth,200);
-assert.equal(page.change('shorter',S.validate({mapHeight:50})).values.mapHeight,50);
+assert.equal(page.change('shorter',S.validate({mapHeight:25})).values.mapHeight,25);assert.equal(page.change('narrower',S.validate({mapWidth:30})).values.mapWidth,25);assert.throws(()=>S.validate({mapWidth:20}));
 assert.equal(page.change('taller',base,null,'turn').values.mapHeight,105);
 assert.equal(page.change('larger',base,null,'turn').values.turnSize,110);
 assert.equal(page.texts({settings:base},null,null).mapWidth,'Map width: 100%');

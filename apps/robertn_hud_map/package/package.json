@@ -1,6 +1,6 @@
 {
   "name": "robertn_hud_map",
-  "version": "0.6.25",
+  "version": "0.6.26",
   "description": "HUD map settings and feed: the car position and turn guidance for the HUD map (mindflow-hud)",
   "main": "javascript/runner.js",
   "mguLocalOnly": true,

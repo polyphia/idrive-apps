@@ -14,6 +14,14 @@ const CONFIRM = 2;                // consecutive agreements/disagreements to act
 const SIDE_TOL = null;            // side must match outright
 const DIST_TOL_FRAC = 0.5, DIST_TOL_MIN_M = 120;   // distance-to-turn tolerance
 const GUIDANCE_GAP_MS = 8000;     // a long gap resets the streak
+const PHONE_SETTLE_MS = 1000;     // phone maneuver unchanged this long before Vela is asked
+const OFF_ROUTE_M = 30;           // car this far from the line (2 fixes) has left the route
+const OFF_HEADING_M = 10, OFF_HEADING_DEG = 50;   // >10 m off and heading >50 deg from the line also counts
+const LATERAL_TAU_MS = 15000, LATERAL_MAX_M = 15;   // learned side offset: time constant and cap
+const OFF_PERSIST_MS = 800;       // off the line this long (by time) before it counts
+const OFF_ROUTE_WAIT_MS = 5000;   // off the route, ask Vela after this even if the phone never recalculates
+// what identifies "the same instruction" from the phone (distance excluded: it counts down)
+function phoneSignature(m) { return [m.kind, m.direction, m.branch, m.side, m.exit, m.text].join('|'); }
 
 function local(p, o) { return [(p[0] - o[0]) * 111320 * Math.cos(o[1] * Math.PI / 180), (p[1] - o[1]) * 111320]; }
 // nearest point on a polyline to c; returns {seg, t, alongM} (alongM = metres from start)
@@ -132,12 +140,20 @@ class RouteMatch {
         this.wall = o.wall || Date.now;
         this.agree = 0; this.disagree = 0; this.lastAt = 0; this.lastGuidanceAt = 0;
         this.clipIndex = null; this.clipAlong = null; this.state = 'idle'; this.rerouteWanted = false; this.last = null;
+        this.phoneSig = null; this.phoneSince = 0; this.phoneFresh = false; this.phoneDist = null; this.offSince = 0; this.lateral = 0; this.lateralAt = 0;
     }
     // route = {coordinates, steps}; phone = the guidance maneuver (or null)
     update(fix, route, phone) {
         var now = this.wall();
         if (!route || !route.coordinates || route.coordinates.length < 2) { this.reset('no route'); return this.result(); }
-        if (phone) this.lastGuidanceAt = now;
+        if (phone) {
+            this.lastGuidanceAt = now;
+            var sig = phoneSignature(phone);
+            // A change while the old maneuver was still well ahead is a recalculation; a change
+            // near 0 m is the phone advancing to its next turn and is not evidence.
+            if (sig !== this.phoneSig) { this.phoneFresh = this.phoneSig !== null && this.phoneDist !== null && this.phoneDist > 60; this.phoneSig = sig; this.phoneSince = now; }
+            this.phoneDist = phoneMetres(phone);
+        }
         else if (now - this.lastGuidanceAt > GUIDANCE_GAP_MS) { this.agree = this.disagree = 0; }   // guidance gap resets streaks
         if (now - this.lastAt < EVIDENCE_GAP_MS) return this.result();                               // not new evidence yet
         this.lastAt = now;
@@ -156,22 +172,75 @@ class RouteMatch {
         this.last = { phoneSide: ps, routeSide: rs, phoneDist: pd, routeDist: rd === null ? null : Math.round(rd) };
 
         // a disagreement needs both sides known and clearly different, or distances far apart
-        var decided = ps && rs;
+        // Off the line: the car left the route itself. This needs no phone data, so the cyan line
+        // reacts on GPS alone instead of waiting for Android Auto to notice and recalculate.
+        // It also stops a stalled route position from "agreeing" with an unrelated later turn.
+        // A car that turned away is detected from its heading well before it is 30 m away.
+        // Heading difference to the closest-matching route segment within 30 m (near a corner the
+        // nearest segment can be the outgoing road, e.g. right lane before a right turn).
+        var headingOff = null;
+        if (proj && Number.isFinite(fix.heading)) {
+            for (var si = Math.max(1, proj.seg - 2); si <= Math.min(route.coordinates.length - 1, proj.seg + 2); si++) {
+                var sp = project([route.coordinates[si - 1], route.coordinates[si]], [fix.lon, fix.lat]);
+                if (si !== proj.seg && (!sp || sp.d > 30)) continue;
+                var sa = local(route.coordinates[si - 1], route.coordinates[si]);
+                var sh = (Math.atan2(-sa[0], -sa[1]) * 180 / Math.PI + 360) % 360, off = Math.abs(((fix.heading - sh + 540) % 360) - 180);
+                if (headingOff === null || off < headingOff) headingOff = off;
+            }
+        }
+        // Distance from the line is measured from the car's usual side offset: a dual carriageway
+        // drawn on its centre line, or slow GPS drift, keeps the car metres to one side for minutes.
+        // The offset is learned slowly while on the route (capped), so a real turn-off still shows.
+        var dev = proj ? proj.d : 0;
+        if (proj) {
+            var A = local(route.coordinates[proj.seg - 1], [fix.lon, fix.lat]), Bp = local(route.coordinates[proj.seg], [fix.lon, fix.lat]);
+            var side = (Bp[0] - A[0]) * (-A[1]) - (Bp[1] - A[1]) * (-A[0]) >= 0 ? 1 : -1, signed = side * proj.d;
+            dev = Math.abs(signed - this.lateral);
+        }
+        var turnedAway = headingOff !== null && dev > OFF_HEADING_M && headingOff > OFF_HEADING_DEG;
+        var offRoute = !!proj && (dev > OFF_ROUTE_M || turnedAway);
+        if (proj && !offRoute && this.state !== 'mismatch') {
+            var w = Math.min(1, (now - (this.lateralAt || now)) / LATERAL_TAU_MS);
+            this.lateral += (Math.max(-LATERAL_MAX_M, Math.min(LATERAL_MAX_M, signed)) - this.lateral) * w;
+        }
+        this.lateralAt = now;
+        // Confirmed by time, not by a count of observations: at 5-10 Hz two noisy fixes are only
+        // 0.5 s apart. A clear turn-away (>15 m, >60 deg over a >=10 m course) is decisive at once.
+        // At 5-10 Hz a single noisy course can swing; there the turn-away must repeat on the next
+        // observation (0.5 s). At ~1 Hz the course spans the whole inter-fix distance and one counts.
+        var clearlyNow = turnedAway && dev > 15 && headingOff > 60;
+        var clearlyAway = clearlyNow && (this.prevClearly || now - (this.prevObsAt || 0) >= 900);
+        this.prevClearly = clearlyNow; this.prevObsAt = now;
+        if (offRoute) {
+            this.offSince = this.offSince || now; this.agree = 0;
+            if (clearlyAway || now - this.offSince >= OFF_PERSIST_MS) this.disagree = Math.max(CONFIRM, this.disagree + 1);
+        }
+        else this.offSince = 0;
+        var decided = !offRoute && ps && rs;
         var sideBad = decided && ps !== rs;
         var phoneRoundabout = phone && phone.kind === 'roundabout';
         var routeRoundabout = nextStep && /^(roundabout|rotary)$/.test(nextStep.type);
         var exitBad = phoneRoundabout && routeRoundabout && Number.isInteger(phone.exit) && phone.exit > 0 && Number.isInteger(nextStep.exit) && nextStep.exit > 0 && phone.exit !== nextStep.exit;
         var distBad = decided && pd !== null && rd !== null && Math.abs(pd - rd) > Math.max(DIST_TOL_MIN_M, DIST_TOL_FRAC * Math.min(pd, rd));
-        if (!decided) { /* missing data: no evidence either way */ return this.result(); }
+        if (!decided && !offRoute) { /* missing data: no evidence either way */ return this.result(); }
 
-        if (sideBad || distBad || exitBad) { this.disagree++; this.agree = 0; }
+        // A phone maneuver that just changed (Android Auto rerouted) and contradicts the route's
+        // side or exit is decisive: clip at once so the local line follows the phone's turn.
+        var fresh = this.phoneFresh && now - this.phoneSince <= 2000; this.phoneFresh = false;
+        if (offRoute) { /* already counted */ }
+        else if (fresh && (sideBad || exitBad)) { this.disagree = CONFIRM; this.agree = 0; }
+        else if (sideBad || distBad || exitBad) { this.disagree++; this.agree = 0; }
         else { this.agree++; this.disagree = 0; }
 
         if (this.disagree >= CONFIRM) {
-            // clip before the disputed junction, and ask for a reroute once
-            this.clipIndex = nextStep ? nextStep._seg : null;
-            this.clipAlong = nextStep ? Math.max(0, nextStep._along - 8) : 0;
-            if (this.state !== 'mismatch') { this.rerouteWanted = true; this.state = 'mismatch'; }
+            // clip before the disputed junction (off the route: drop the line entirely so the
+            // local fallback follows the car's own road), and ask for a reroute once
+            this.clipIndex = offRoute ? null : nextStep ? nextStep._seg : null;
+            this.clipAlong = offRoute ? 0 : nextStep ? Math.max(0, nextStep._along - 8) : 0;
+            if (this.state !== 'mismatch') {
+                this.rerouteWanted = true; this.state = 'mismatch';
+                var why = offRoute ? (turnedAway ? 'turned away' : 'off the line') : fresh ? 'phone recalculated' : sideBad ? 'turn side' : exitBad ? 'roundabout exit' : 'turn distance';
+            }
         } else if (this.agree >= CONFIRM) {
             this.clipIndex = null; this.clipAlong = null; this.state = 'agree'; this.rerouteWanted = false;
         }
@@ -198,7 +267,16 @@ class RouteMatch {
     }
     // the service calls this once per update; true means "reroute now"
     takeReroute() { var r = this.rerouteWanted; this.rerouteWanted = false; return r; }
-    onNewRoute() { this.agree = this.disagree = 0; this.clipIndex = null; this.clipAlong = null; this.state = 'idle'; this.rerouteWanted = false; this.lastAt = 0; }
+    // Vela is asked only once the phone's maneuver has settled; a request made while
+    // Android Auto is still recalculating would be answered for an obsolete turn.
+    // Off the route, wait for the phone's recalculated maneuver (one that changed after the car
+    // left the line); if the phone never changes, ask anyway after OFF_ROUTE_WAIT_MS.
+    phoneSettled() {
+        var now = this.wall();
+        if (this.offSince && this.phoneSince < this.offSince && now - this.offSince < OFF_ROUTE_WAIT_MS) return false;
+        return this.phoneSig !== null && now - this.phoneSince >= PHONE_SETTLE_MS;
+    }
+    onNewRoute() { this.offSince = 0; this.agree = this.disagree = 0; this.clipIndex = null; this.clipAlong = null; this.state = 'idle'; this.rerouteWanted = false; this.lastAt = 0; }
     reset(why) { this.onNewRoute(); this.state = why || 'idle'; }
     result() { return { state: this.state, clipIndex: this.clipIndex, agree: this.agree, disagree: this.disagree, detail: this.last }; }
 }

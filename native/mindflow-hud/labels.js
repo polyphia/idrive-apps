@@ -75,7 +75,7 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
  }
  if(guidance){
   const start=g.positions.length;guidancePanel(guidance);
-  const sc=(cfg.turnSize||100)/100,ox=800-24-150*sc+(cfg.turnX||0),oy=480-24-170*sc+(cfg.turnY||0);
+  const sc=(cfg.turnSize||100)/100,panel=Settings.panel(cfg,'turn'),ox=panel.x,oy=panel.y;
   const v=Settings.view(cfg),k=v[1]||1;
   for(let i=start;i<g.positions.length;i+=3){
    const sx=ox+(g.positions[i]-20)*sc,sy=oy+(g.positions[i+1]-20)*sc;
@@ -95,7 +95,7 @@ function build(roads,pose,font,traffic,cameraState,settings,guidance){const cfg=
 // so every quad stays inside the box, including long unbroken street names.
 function streetLayout(value,font,cfg){
  const size=15*(cfg.streetSize||100)/100,scale=size/32,width=300*(cfg.streetWidth||100)/100,height=60*(cfg.streetHeight||100)/100;
- const right=766+(cfg.streetX||0),bottom=456+(cfg.streetY||0),left=right-width,top=bottom-height;
+ const panel=Settings.panel(cfg,'street'),left=panel.x,top=panel.y,right=left+width,bottom=top+height;
  const glyph=ch=>font.glyphs[ch]||font.glyphs['?'];
  const extent=s=>{let advance=0,end=0;Array.from(s).forEach(ch=>{const f=glyph(ch);end=Math.max(end,advance+f.w*scale);advance+=f.advance*scale;});return end;};
  const lineHeight=Math.max.apply(null,Object.keys(font.glyphs).map(ch=>font.glyphs[ch].h*scale)),capacity=Math.floor(height/lineHeight),lines=[];

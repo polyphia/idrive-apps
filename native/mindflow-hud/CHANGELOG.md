@@ -1,3 +1,23 @@
+# Changelog
+
+## Unreleased
+
+- Map width and height adjustable independently (25-200%).
+- Map no longer blanks when Android Auto recalculates the route.
+- Faster cyan line correction after a missed turn; Vela is re-queried only after the phone's new turn settles.
+- Route line kept (clipped if disputed) during short gaps in phone guidance.
+- More reliable local road line, including dense city centres.
+- Better handling of GPS noise and 5-10 Hz positioning; fewer false reroutes.
+- Map re-centring no longer drops HUD layers.
+- Missed-turn simulation test.
+- Uplink lease DNS, gzip responses and Portuguese postal-code matching.
+- Destination reading is automatic; diagnostic recording and USB exporters removed.
+- Release-time version stamping.
+
+## 0.6.26
+
+- Centre places the selected turn panel or street box at the canvas centre. Safer inward defaults and bounds keep movement/resizing within a 40 px canvas inset. Existing saved positions are constrained on load.
+
 ## 0.6.25
 
 - City/locality geocoding with nearby exact-name ranking and a 1500 km guard for automatic text destinations.
@@ -27,18 +47,3 @@
 ## 0.6.15
 
 - Independently show, hide, move and resize the turn street text. Adjustable box width and height; long names wrap upward and overflow ends with an ellipsis.
-
-# Changelog
-
-## Unreleased
-
-- Add independent map width/height percentages anchored at the car arrow.
-
-- Resolve internet names using uplink lease DNS; support bounded gzip responses and exact Portuguese postal-code matching.
-
-- Remove manual destination-capture controls; destination reading remains automatic.
-
-- Remove diagnostic recording and USB exporters; read destination text through memory-only IPC.
-
-- Import the current local HUD app, destination capture and navigation fixes.
-- Use release-time version stamping and resolve the app dependency with `next`.
