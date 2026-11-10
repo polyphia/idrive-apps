@@ -17,15 +17,16 @@
 #   woc-patch.sh apply  high --safe <WxH+X+Y|full>  # the safe area the phone keeps its
 #                                               # guidance UI in (default 504x368+286+72)
 #   woc-patch.sh apply  high|mid --unproven     # also the first patch of a build outside
-#                                               # the proven list (PATCH.md)
+#                                               # the proven list, and a patch on a car
+#                                               # not coded KI_KOMBI_VARIANT 7 (PATCH.md)
 #   woc-patch.sh revert
 #   woc-patch.sh verify
 #   woc-patch.sh aa-status                      # Android Auto's patch: aapd and aapd.conf
 #   woc-patch.sh aa-revert                      # restore both
 #
-# revert and aa-revert restore from our verified backups; on the proven
-# builds (carplay 22.28.3, aapd 22.39.3 and its aapd.conf) they also work
-# without them, from each file's own shipped content.
+# revert and aa-revert restore from our verified backups; on carplay
+# 22.28.3, aapd 22.39.3 and its aapd.conf they also work without them, from
+# each file's own shipped content.
 #
 # After apply/revert, carplay must start again to load the new binary. This
 # script does NOT stop or start carplay (recmgr and MainApp timing are the
