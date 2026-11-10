@@ -3,8 +3,8 @@
 Road tiles, phone maneuver guidance, destination capture, inferred route geometry and HUD rendering.
 See [the app documentation](../../apps/robertn_hud_map/README.md) for behavior and limitations.
 
-`component.json` lists the complete installed payload, including the destination reader and its Alpine runtime.
-Runtime origins and checksums are in `adapter-runtime/SOURCES.json`; vendored dependencies retain their licenses.
+`component.json` lists the complete installed payload, including the standalone native destination reader.
+The reader needs no Python runtime. Build instructions, tests and library provenance are in [DESTINATION-READER.md](DESTINATION-READER.md); bundled libraries retain their license notices.
 Private routing credentials and captured car data are not part of this source package.
 
 ## Validation
