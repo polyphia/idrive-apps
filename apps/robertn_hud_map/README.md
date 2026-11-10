@@ -9,6 +9,21 @@ assist icons, which keep showing as before.
 
 *Four photos from the driver's seat at night. The photos were heavily denoised; the HUD itself looks sharper.*
 
+### More photos and videos
+
+More photos from the car:
+
+![The HUD map on the road](https://github.com/user-attachments/assets/c11b3abf-9749-4a10-b6e7-bc62819fdd7e)
+![The HUD map on the road](https://github.com/user-attachments/assets/05ebd69c-ce94-47df-a005-f25fa88bfe4d)
+![The HUD map on the road](https://github.com/user-attachments/assets/6a7f8c52-4434-4e38-8680-a4d52330d329)
+
+Videos from the driver's seat. They open in the browser: GitHub plays videos inline only in issues and pull
+requests, not in files like this one.
+
+- [Video 1](https://github.com/user-attachments/assets/6fa58a4a-5cb2-4a51-b8ae-4a8932183d87)
+- [Video 2](https://github.com/user-attachments/assets/bf8d6595-37d4-4793-89fb-b4f7f7898d25)
+- [Video 3](https://github.com/user-attachments/assets/fad76b84-9017-4ef1-9498-51e3c0ac606b)
+
 This is a **prototype**: it runs on the car it was developed on (iDrive 7 MGU, P18_23w44.2-1-3) and needs more work
 before it is a finished app. See [Known issues](#known-issues).
 
